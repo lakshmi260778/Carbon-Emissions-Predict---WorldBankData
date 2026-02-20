@@ -9,31 +9,34 @@ st.set_page_config(page_title="CO₂ Emissions Predictor", page_icon="🌍", lay
 
 # Trend-aware predictor class (must match train_model_V1.0.py)
 class TrendAwarePredictor:
-    def __init__(self, model, le_country, le_region, trend_slopes, last_hist_year):
+    def __init__(self, model, le_country, le_region, trend_slopes, last_hist_year, last_hist_values):
         self.model = model
         self.le_country = le_country
         self.le_region = le_region
         self.trend_slopes = trend_slopes
         self.last_hist_year = last_hist_year
+        self.last_hist_values = last_hist_values
     
     def predict(self, country_encoded, region_encoded, year):
         """Predict with trend projection for future years"""
-        X = pd.DataFrame([{
-            'Country_encoded': country_encoded,
-            'Region_encoded': region_encoded,
-            'Year': year
-        }])
-        base_pred = self.model.predict(X)[0]
-        
         country_name = self.le_country.inverse_transform([country_encoded])[0]
-        slope = self.trend_slopes.get(country_name, 0)
         
-        if year > self.last_hist_year:
+        slope = self.trend_slopes.get(country_name, 0)
+        last_value = self.last_hist_values.get(country_name, 0)
+        
+        # For future years, project from last historical value using trend
+        if year > self.last_hist_year and last_value > 0:
             years_ahead = year - self.last_hist_year
             trend_adjustment = slope * years_ahead
-            return base_pred + trend_adjustment
+            return last_value + trend_adjustment
         else:
-            return base_pred
+            # For historical years or missing data, use base model prediction
+            X = pd.DataFrame([{
+                'Country_encoded': country_encoded,
+                'Region_encoded': region_encoded,
+                'Year': year
+            }])
+            return self.model.predict(X)[0]
 
 # 1. Load trained model and encoders
 @st.cache_resource
@@ -47,9 +50,10 @@ le_country = model_data["le_country"]
 le_region = model_data["le_region"]
 trend_slopes = model_data.get("trend_slopes", {})
 last_hist_year = model_data.get("last_hist_year", 2024)
+last_hist_values = model_data.get("last_hist_values", {})
 
 # Create trend-aware predictor
-model = TrendAwarePredictor(base_model, le_country, le_region, trend_slopes, last_hist_year)
+model = TrendAwarePredictor(base_model, le_country, le_region, trend_slopes, last_hist_year, last_hist_values)
 
 # Comprehensive region mapping (must match train_model_V1.0.py)
 region_map = {
@@ -138,11 +142,12 @@ def load_data():
         # Melt from wide to long format
         df_melt = pd.melt(df_new, id_vars=['Country Name'], value_vars=co2_cols,
                           var_name='Year_str', value_name='Mt_CO2')
-        df_melt['Year'] = df_melt['Year_str'].str.extract('(\\d{4})').astype(int)
+        df_melt['Year'] = df_melt['Year_str'].str.extract('(\d{4})').astype(int)
         df_melt['Country'] = df_melt['Country Name']
         df_melt['Region'] = df_melt['Country'].map(region_map)
-        df_melt['Kilotons of Co2'] = pd.to_numeric(df_melt['Mt_CO2'], errors='coerce') * 1000
-        df_melt = df_melt.dropna(subset=['Kilotons of Co2', 'Region'])
+        # Keep data in Mt (million tonnes) - matches World Bank data units
+        df_melt['Mt_CO2eq'] = pd.to_numeric(df_melt['Mt_CO2'], errors='coerce')
+        df_melt = df_melt.dropna(subset=['Mt_CO2eq', 'Region'])
         
         return df_melt
     except FileNotFoundError:
@@ -194,11 +199,11 @@ st.title("CO₂ Emissions Predictor")
 st.markdown("""
 <small>
 <b>About:</b> This application helps you explore, predict, and visualize carbon dioxide (CO₂) emissions from the agriculture, energy, waste, and industrial sectors across countries over time.
-<b>Units:</b> CO₂ emissions are expressed in carbon dioxide equivalent (CO₂e)<br>
-<b>Data Source:</b> World Development Indicators<br><br> 
+<b>Units:</b> Million tonnes of carbon dioxide equivalent (Mt CO2eq)<br>
+<b>Data Source:</b> World Development Indicators, World Bank<br><br> 
 </small>
 """, unsafe_allow_html=True)
-st.info("Choose a region, country and year in the sidebar and click 'Predict CO₂ Emissions' to see the result.")
+st.info("* Select a region, country, and year from the sidebar, then click ‘Predict CO₂ Emissions’ to view the results.\n\n - You can also explore emission patterns using the options under the Visualizations section.")
  
 
 prediction_result = None
@@ -212,7 +217,7 @@ if country and st.button("🚀 Predict CO₂ Emissions", type="primary"):
         pred = model.predict(country_encoded, region_encoded, year)
         
         prediction_result = pred
-        st.success(f"**Predicted: {pred:,.0f} kilotons**")
+        st.success(f"**Predicted: {pred:,.0f} million tonnes of carbon‑dioxide equivalent.**")
         st.markdown("<medium>Be prudent. Act wise. Protect our resources.</medium>", unsafe_allow_html=True)  
     except Exception as e:
         st.error(f"Error: {e}")
@@ -254,7 +259,7 @@ if df is not None and country:
     if show_top_emitters:
         with st.expander(f"📊 {country} vs Top Emitting Countries", expanded=True):
             # Get top 5 countries by total emissions for comparison (only those in model)
-            top_countries = df.groupby("Country")["Kilotons of Co2"].sum().nlargest(10).index.tolist()
+            top_countries = df.groupby("Country")["Mt_CO2eq"].sum().nlargest(10).index.tolist()
             top_countries = [c for c in top_countries if c in model_countries][:5]
             
             # Ensure selected country is included (if it's in the model)
@@ -272,7 +277,7 @@ if df is not None and country:
                 
                 if c == country:
                     # Plot historical data for selected country
-                    ax1.plot(country_data["Year"], country_data["Kilotons of Co2"], 
+                    ax1.plot(country_data["Year"], country_data["Mt_CO2eq"], 
                             marker="o", linewidth=3, label=f"{c} (Historical)", color="red")
                     
                     # Plot future predictions for selected country
@@ -284,7 +289,7 @@ if df is not None and country:
                                     label=f"{c} (Predicted)", color="darkred")
                 else:
                     # Plot historical data for other countries
-                    ax1.plot(country_data["Year"], country_data["Kilotons of Co2"], 
+                    ax1.plot(country_data["Year"], country_data["Mt_CO2eq"], 
                             marker="o", alpha=0.7, label=f"{c} (Historical)")
                     
                     # Plot future predictions for other countries
@@ -299,7 +304,7 @@ if df is not None and country:
                 ax1.axvline(x=last_historical_year + 0.5, color="gray", linestyle=":", alpha=0.7, label="Prediction Start")
             
             ax1.set_xlabel("Year")
-            ax1.set_ylabel("Kilotons of CO2")
+            ax1.set_ylabel("Mt CO2eq")
             ax1.set_title(f"CO2 Emissions Over Time: {country} vs Top Emitters (with Predictions till {year})")
             ax1.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
             ax1.grid(True, alpha=0.3)
@@ -312,7 +317,7 @@ if df is not None and country:
             
             # Selected country - Historical data
             country_data = df[df["Country"] == country].sort_values("Year")
-            ax2.plot(country_data["Year"], country_data["Kilotons of Co2"], 
+            ax2.plot(country_data["Year"], country_data["Mt_CO2eq"], 
                     marker="o", linewidth=3, label=f"{country} (Historical)", color="red")
             
             # Selected country - Future predictions
@@ -324,8 +329,8 @@ if df is not None and country:
                             label=f"{country} (Predicted)", color="darkred")
             
             # Regional average - Historical
-            region_data = df[df["Region"] == region].groupby("Year")["Kilotons of Co2"].mean().reset_index()
-            ax2.plot(region_data["Year"], region_data["Kilotons of Co2"], 
+            region_data = df[df["Region"] == region].groupby("Year")["Mt_CO2eq"].mean().reset_index()
+            ax2.plot(region_data["Year"], region_data["Mt_CO2eq"], 
                     marker="s", linewidth=2, label=f"{region} Average (Historical)", color="blue", linestyle="-")
             
             # Regional average - Future predictions (predict for all countries in region and average)
@@ -351,7 +356,7 @@ if df is not None and country:
                 ax2.axvline(x=last_historical_year + 0.5, color="gray", linestyle=":", alpha=0.7, label="Prediction Start")
             
             ax2.set_xlabel("Year")
-            ax2.set_ylabel("Kilotons of CO2")
+            ax2.set_ylabel("Mt CO2eq")
             ax2.set_title(f"{country} vs {region} Regional Average Over Time (with Predictions till {year})")
             ax2.legend()
             ax2.grid(True, alpha=0.3)
@@ -365,7 +370,7 @@ if df is not None and country:
             
             if year <= latest_historical_year:
                 # Use historical data
-                year_data = df[df["Year"] == year].groupby("Country")["Kilotons of Co2"].sum().nlargest(10)
+                year_data = df[df["Year"] == year].groupby("Country")["Mt_CO2eq"].sum().nlargest(10)
             else:
                 # Use predictions for countries in model only
                 year_preds = {}
@@ -380,7 +385,7 @@ if df is not None and country:
             fig3, ax3 = plt.subplots(figsize=(10, 6))
             colors = ["red" if c == country else "steelblue" for c in year_data.index]
             sns.barplot(x=year_data.values, y=year_data.index, palette=colors, ax=ax3)
-            ax3.set_xlabel("Kilotons of CO2")
+            ax3.set_xlabel("Million tonnes of CO2")
             title_type = "Historical" if year <= latest_historical_year else "Predicted"
             ax3.set_title(f"Top 10 Countries by CO2 Emissions ({year}) - {title_type}")
             st.pyplot(fig3)

@@ -80,37 +80,36 @@ region_map = {
 
 # Custom predictor class that combines model with trend projection
 class TrendAwarePredictor:
-    def __init__(self, model, le_country, le_region, trend_slopes, last_hist_year):
+    def __init__(self, model, le_country, le_region, trend_slopes, last_hist_year, last_hist_values):
         self.model = model
         self.le_country = le_country
         self.le_region = le_region
         self.trend_slopes = trend_slopes  # Dict: country -> slope
         self.last_hist_year = last_hist_year
+        self.last_hist_values = last_hist_values  # Dict: country -> last historical value
     
     def predict(self, country_encoded, region_encoded, year):
         """Predict with trend projection for future years"""
-        # Get base prediction from model
-        X = pd.DataFrame([{
-            'Country_encoded': country_encoded,
-            'Region_encoded': region_encoded,
-            'Year': year
-        }])
-        base_pred = self.model.predict(X)[0]
-        
         # Get country name from encoded value
         country_name = self.le_country.inverse_transform([country_encoded])[0]
         
-        # Apply trend adjustment for future years
+        # Get trend slope and last historical value for this country
         slope = self.trend_slopes.get(country_name, 0)
-        if year > self.last_hist_year:
+        last_value = self.last_hist_values.get(country_name, 0)
+        
+        # For future years, project from last historical value using trend
+        if year > self.last_hist_year and last_value > 0:
             years_ahead = year - self.last_hist_year
             trend_adjustment = slope * years_ahead
-            return base_pred + trend_adjustment
-        elif year < self.last_hist_year:
-            # For historical years, just use base prediction
-            return base_pred
+            return last_value + trend_adjustment
         else:
-            return base_pred
+            # For historical years or missing data, use base model prediction
+            X = pd.DataFrame([{
+                'Country_encoded': country_encoded,
+                'Region_encoded': region_encoded,
+                'Year': year
+            }])
+            return self.model.predict(X)[0]
     
     def predict_batch(self, country_encoded_list, region_encoded_list, year_list):
         """Predict for multiple inputs"""
@@ -127,11 +126,12 @@ co2_cols = [col for col in df_new.columns if col.startswith(tuple(str(y) for y i
 df_new = df_new[df_new['Series Name'] == 'Carbon dioxide (CO2) emissions (total) excluding LULUCF (Mt CO2e)'].copy()
 df_melt = pd.melt(df_new, id_vars=['Country Name'], value_vars=co2_cols, 
                   var_name='Year_str', value_name='Mt_CO2')
-df_melt['Year'] = df_melt['Year_str'].str.extract('(\d{4})').astype(int)
+df_melt['Year'] = df_melt['Year_str'].str.extract(r'(\d{4})').astype(int)
 df_melt['Country'] = df_melt['Country Name']
 df_melt['Region'] = df_melt['Country'].map(region_map)  # Add region!
-df_melt['Kilotons of Co2'] = pd.to_numeric(df_melt['Mt_CO2'], errors='coerce') * 1000
-df_melt = df_melt.dropna(subset=['Kilotons of Co2', 'Region'])  # Drop missing CO2 or region
+# Keep data in Mt (million tonnes) - matches World Bank data units
+df_melt['Mt_CO2eq'] = pd.to_numeric(df_melt['Mt_CO2'], errors='coerce')
+df_melt = df_melt.dropna(subset=['Mt_CO2eq', 'Region'])  # Drop missing CO2 or region
 
 print(f"Processed data: {df_melt.shape[0]} rows across {df_melt['Country'].nunique()} countries")
 
@@ -143,7 +143,7 @@ for country in df_melt['Country'].unique():
         # Use last 5 data points for trend
         recent = country_data.tail(5)
         years = recent['Year'].values
-        emissions = recent['Kilotons of Co2'].values
+        emissions = recent['Mt_CO2eq'].values
         year_diff = years[-1] - years[0]
         if year_diff > 0:
             slope = (emissions[-1] - emissions[0]) / year_diff
@@ -154,6 +154,14 @@ for country in df_melt['Country'].unique():
         trend_slopes[country] = 0
 
 last_hist_year = df_melt['Year'].max()
+
+# Calculate last historical values for each country
+last_hist_values = {}
+for country in df_melt['Country'].unique():
+    country_data = df_melt[df_melt['Country'] == country].sort_values('Year')
+    if len(country_data) > 0:
+        last_hist_values[country] = country_data['Mt_CO2eq'].iloc[-1]
+
 print(f"Calculated trends for {len(trend_slopes)} countries (last historical year: {last_hist_year})")
 
 # Encode categoricals (now includes Region)
@@ -164,7 +172,7 @@ df_melt['Region_encoded'] = le_region.fit_transform(df_melt['Region'])
 
 feature_cols = ['Country_encoded', 'Region_encoded', 'Year']
 X = df_melt[feature_cols]
-y = df_melt['Kilotons of Co2']
+y = df_melt['Mt_CO2eq']
 
 Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -178,7 +186,7 @@ print(f"Test R²: {r2_score(ytest, y_pred):.3f}")
 print(f"Test RMSE: {np.sqrt(mean_squared_error(ytest, y_pred)):.0f}")
 
 # Create trend-aware predictor
-predictor = TrendAwarePredictor(base_model, le_country, le_region, trend_slopes, last_hist_year)
+predictor = TrendAwarePredictor(base_model, le_country, le_region, trend_slopes, last_hist_year, last_hist_values)
 
 # Save model + encoders + trend data
 with open("co2_model_V1.0.pkl", "wb") as f:
@@ -187,7 +195,8 @@ with open("co2_model_V1.0.pkl", "wb") as f:
         "le_country": le_country,
         "le_region": le_region,
         "trend_slopes": trend_slopes,
-        "last_hist_year": last_hist_year
+        "last_hist_year": last_hist_year,
+        "last_hist_values": last_hist_values
     }, f)
 print("Saved: co2_model_V1.0.pkl (with trend projection)")
 
@@ -197,7 +206,7 @@ india_idx = le_country.transform(["India"])[0]
 india_region_idx = le_region.transform(["Asia"])[0]
 for yr in [2025, 2030, 2035, 2040]:
     pred = predictor.predict(india_idx, india_region_idx, yr)
-    print(f"  {yr}: {pred:,.0f} kilotons")
+    print(f"  {yr}: {pred:,.0f} million tonnes")
 
 # UAE future predictions (2025-2030)
 print("\nUAE predictions (with trend projection):")
@@ -205,4 +214,4 @@ uae_idx = le_country.transform(["United Arab Emirates"])[0]
 uae_region_idx = le_region.transform(["Asia"])[0]
 for yr in range(2025, 2031):
     pred = predictor.predict(uae_idx, uae_region_idx, yr)
-    print(f"  {yr}: {pred:,.0f} kilotons")
+    print(f"  {yr}: {pred:,.0f} million tonnes")
