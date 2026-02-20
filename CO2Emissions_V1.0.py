@@ -3,8 +3,37 @@ import pickle
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 
 st.set_page_config(page_title="CO₂ Emissions Predictor", page_icon="🌍", layout="wide")
+
+# Trend-aware predictor class (must match train_model_V1.0.py)
+class TrendAwarePredictor:
+    def __init__(self, model, le_country, le_region, trend_slopes, last_hist_year):
+        self.model = model
+        self.le_country = le_country
+        self.le_region = le_region
+        self.trend_slopes = trend_slopes
+        self.last_hist_year = last_hist_year
+    
+    def predict(self, country_encoded, region_encoded, year):
+        """Predict with trend projection for future years"""
+        X = pd.DataFrame([{
+            'Country_encoded': country_encoded,
+            'Region_encoded': region_encoded,
+            'Year': year
+        }])
+        base_pred = self.model.predict(X)[0]
+        
+        country_name = self.le_country.inverse_transform([country_encoded])[0]
+        slope = self.trend_slopes.get(country_name, 0)
+        
+        if year > self.last_hist_year:
+            years_ahead = year - self.last_hist_year
+            trend_adjustment = slope * years_ahead
+            return base_pred + trend_adjustment
+        else:
+            return base_pred
 
 # 1. Load trained model and encoders
 @st.cache_resource
@@ -13,9 +42,14 @@ def load_model():
         return pickle.load(f)
 
 model_data = load_model()
-model = model_data["model"]
+base_model = model_data["model"]
 le_country = model_data["le_country"]
 le_region = model_data["le_region"]
+trend_slopes = model_data.get("trend_slopes", {})
+last_hist_year = model_data.get("last_hist_year", 2024)
+
+# Create trend-aware predictor
+model = TrendAwarePredictor(base_model, le_country, le_region, trend_slopes, last_hist_year)
 
 # Region mapping (must match train_model_V1.0.py)
 region_map = {
@@ -100,14 +134,21 @@ else:
 #st.sidebar.markdown("<small>Predict kilotons of CO₂ based on country, region, and year.</small>", unsafe_allow_html=True)
 #st.sidebar.markdown("---")
 
+# Get list of countries that the model knows
+model_countries = set(le_country.classes_)
+
 # Input widgets in sidebar
 st.sidebar.subheader("Input Parameters")
 
 if regions:
     region = st.sidebar.selectbox("Region", regions)
-    # Filter countries based on selected region
-    countries_in_region = sorted([c for c, r in country_region_map.items() if r == region])
-    country = st.sidebar.selectbox("Country", countries_in_region)
+    # Filter countries based on selected region AND model training data
+    countries_in_region = sorted([c for c, r in country_region_map.items() if r == region and c in model_countries])
+    if countries_in_region:
+        country = st.sidebar.selectbox("Country", countries_in_region)
+    else:
+        st.sidebar.warning(f"No trained model data available for countries in {region}")
+        country = None
 else:
     region = st.sidebar.text_input("Region (type name)")
     country = st.sidebar.text_input("Country (type name)")
@@ -122,30 +163,24 @@ st.title("CO₂ Emissions Predictor")
 st.subheader("Global Warming Potential (GWP)")
 st.markdown("""
 <small>
-<b>About:</b> This application helps you explore, predict, and visualize carbon dioxide (CO₂) emissions from the agriculture, energy, waste, and industrial sectors across countries over time.<br>
+<b>About:</b> This application helps you explore, predict, and visualize carbon dioxide (CO₂) emissions from the agriculture, energy, waste, and industrial sectors across countries over time.
 <b>Units:</b> CO₂ emissions are expressed in carbon dioxide equivalent (CO₂e)<br>
 <b>Data Source:</b> World Development Indicators<br><br> 
 </small>
 """, unsafe_allow_html=True)
-st.info("Choose a country, region, and year in the sidebar and click 'Predict CO₂ Emissions' to see the result.")
+st.info("Choose a region, country and year in the sidebar and click 'Predict CO₂ Emissions' to see the result.")
  
 
 prediction_result = None
-if st.button("🚀 Predict CO₂ Emissions", type="primary"):
+if country and st.button("🚀 Predict CO₂ Emissions", type="primary"):
     try:
         # Encode the user inputs using the same encoders from training
         country_encoded = le_country.transform([country])[0]
         region_encoded = le_region.transform([region])[0]
 
-        # Construct one-row DataFrame with encoded values
-        # Column names must match those used during training
-        X_user = pd.DataFrame([{
-            "Country_encoded": country_encoded,
-            "Region_encoded": region_encoded,
-            "Year": year
-        }])
-
-        pred = model.predict(X_user)[0]
+        # Use trend-aware prediction (model already includes trend projection)
+        pred = model.predict(country_encoded, region_encoded, year)
+        
         prediction_result = pred
         st.success(f"**Predicted: {pred:,.0f} kilotons**")
         st.markdown("<medium>Be prudent. Act wise. Protect our resources.</medium>", unsafe_allow_html=True)  
@@ -165,26 +200,21 @@ if df is not None and country:
     # Prepare data for visualization
     # Year column already exists from load_data()
     
-    # Helper function to predict future values
+    # Helper function to predict future values using trend-aware model
     def predict_future(c_name, r_name, years):
         # Check if country is in the model's training data
-        if c_name not in le_country.classes_:
+        if c_name not in model_countries:
             return None  # Country not in training data
+        
         c_encoded = le_country.transform([c_name])[0]
         r_encoded = le_region.transform([r_name])[0]
+        
         predictions = []
         for y in years:
-            X_pred = pd.DataFrame([{
-                "Country_encoded": c_encoded,
-                "Region_encoded": r_encoded,
-                "Year": y
-            }])
-            pred = model.predict(X_pred)[0]
+            # Use the trend-aware predictor
+            pred = model.predict(c_encoded, r_encoded, y)
             predictions.append(pred)
         return predictions
-    
-    # Get list of countries that the model knows (for filtering)
-    model_countries = set(le_country.classes_)
     
     # Get year range for predictions
     last_historical_year = df["Year"].max()
