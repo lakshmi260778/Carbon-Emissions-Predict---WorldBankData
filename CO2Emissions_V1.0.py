@@ -160,7 +160,7 @@ st.sidebar.markdown("---")
 
 # Main page content
 st.title("CO₂ Emissions Predictor")
-st.subheader("Global Warming Potential (GWP)")
+#st.subheader("Global Warming Potential (GWP)")
 st.markdown("""
 <small>
 <b>About:</b> This application helps you explore, predict, and visualize carbon dioxide (CO₂) emissions from the agriculture, energy, waste, and industrial sectors across countries over time.
