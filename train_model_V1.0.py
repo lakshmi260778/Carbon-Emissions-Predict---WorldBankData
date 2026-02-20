@@ -6,15 +6,76 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import pickle
 
-# Region mapping (expand as needed from your original data)
+# Comprehensive region mapping for all countries in the dataset
 region_map = {
-    'Afghanistan': 'Asia', 'Albania': 'Europe', 'Algeria': 'Africa', 'Angola': 'Africa',
-    'Argentina': 'Americas', 'Armenia': 'Asia', 'Aruba': 'Americas', 'Australia': 'Oceania',
-    'Austria': 'Europe', 'Azerbaijan': 'Asia', 'Bahamas': 'Americas', 'Bahrain': 'Asia',
-    'Bangladesh': 'Asia', 'Barbados': 'Americas', 'Belarus': 'Europe', 'Belgium': 'Europe',
-    'Belize': 'Americas', 'United Arab Emirates': 'Asia', 'United States': 'Americas',
-    'China': 'Asia', 'India': 'Asia', 'Saudi Arabia': 'Asia', 'Germany': 'Europe'
-    # Add more: df_old.groupby('Country')['Region'].first().to_dict()
+    # Asia
+    'Afghanistan': 'Asia', 'Armenia': 'Asia', 'Azerbaijan': 'Asia', 'Bahrain': 'Asia',
+    'Bangladesh': 'Asia', 'Bhutan': 'Asia', 'Brunei Darussalam': 'Asia', 'Cambodia': 'Asia',
+    'China': 'Asia', 'Cyprus': 'Asia', 'Georgia': 'Asia', 'India': 'Asia',
+    'Indonesia': 'Asia', 'Iran, Islamic Rep.': 'Asia', 'Iraq': 'Asia', 'Israel': 'Asia',
+    'Japan': 'Asia', 'Jordan': 'Asia', 'Kazakhstan': 'Asia', 'Kuwait': 'Asia',
+    'Kyrgyz Republic': 'Asia', 'Lao PDR': 'Asia', 'Lebanon': 'Asia', 'Malaysia': 'Asia',
+    'Maldives': 'Asia', 'Mongolia': 'Asia', 'Myanmar': 'Asia', 'Nepal': 'Asia',
+    "Korea, Dem. People's Rep.": 'Asia', 'Oman': 'Asia', 'Pakistan': 'Asia',
+    'Philippines': 'Asia', 'Qatar': 'Asia', 'Saudi Arabia': 'Asia', 'Singapore': 'Asia',
+    'Korea, Rep.': 'Asia', 'Sri Lanka': 'Asia', 'Syrian Arab Republic': 'Asia',
+    'Tajikistan': 'Asia', 'Thailand': 'Asia', 'Timor-Leste': 'Asia', 'Turkiye': 'Asia',
+    'Turkmenistan': 'Asia', 'United Arab Emirates': 'Asia', 'Uzbekistan': 'Asia',
+    'Viet Nam': 'Asia', 'Yemen, Rep.': 'Asia', 'Hong Kong SAR, China': 'Asia',
+    'Macao SAR, China': 'Asia',
+    # Europe
+    'Albania': 'Europe', 'Andorra': 'Europe', 'Austria': 'Europe', 'Belarus': 'Europe',
+    'Belgium': 'Europe', 'Bosnia and Herzegovina': 'Europe', 'Bulgaria': 'Europe',
+    'Croatia': 'Europe', 'Czech Republic': 'Europe', 'Denmark': 'Europe', 'Estonia': 'Europe',
+    'Finland': 'Europe', 'France': 'Europe', 'Germany': 'Europe', 'Greece': 'Europe',
+    'Hungary': 'Europe', 'Iceland': 'Europe', 'Ireland': 'Europe', 'Italy': 'Europe',
+    'Latvia': 'Europe', 'Liechtenstein': 'Europe', 'Lithuania': 'Europe', 'Luxembourg': 'Europe',
+    'Malta': 'Europe', 'Moldova': 'Europe', 'Monaco': 'Europe', 'Montenegro': 'Europe',
+    'Netherlands': 'Europe', 'North Macedonia': 'Europe', 'Norway': 'Europe', 'Poland': 'Europe',
+    'Portugal': 'Europe', 'Romania': 'Europe', 'Russian Federation': 'Europe',
+    'San Marino': 'Europe', 'Serbia': 'Europe', 'Slovak Republic': 'Europe', 'Slovenia': 'Europe',
+    'Spain': 'Europe', 'Sweden': 'Europe', 'Switzerland': 'Europe', 'Ukraine': 'Europe',
+    'United Kingdom': 'Europe', 'Kosovo': 'Europe',
+    # Africa
+    'Algeria': 'Africa', 'Angola': 'Africa', 'Benin': 'Africa', 'Botswana': 'Africa',
+    'Burkina Faso': 'Africa', 'Burundi': 'Africa', 'Cabo Verde': 'Africa', 'Cameroon': 'Africa',
+    'Central African Republic': 'Africa', 'Chad': 'Africa', 'Comoros': 'Africa',
+    'Congo, Dem. Rep.': 'Africa', 'Congo, Rep.': 'Africa', 'Djibouti': 'Africa',
+    'Egypt, Arab Rep.': 'Africa', 'Equatorial Guinea': 'Africa', 'Eritrea': 'Africa',
+    'Eswatini': 'Africa', 'Ethiopia': 'Africa', 'Gabon': 'Africa', 'Gambia, The': 'Africa',
+    'Ghana': 'Africa', 'Guinea': 'Africa', 'Guinea-Bissau': 'Africa', "Cote d'Ivoire": 'Africa',
+    'Kenya': 'Africa', 'Lesotho': 'Africa', 'Liberia': 'Africa', 'Libya': 'Africa',
+    'Madagascar': 'Africa', 'Malawi': 'Africa', 'Mali': 'Africa', 'Mauritania': 'Africa',
+    'Mauritius': 'Africa', 'Morocco': 'Africa', 'Mozambique': 'Africa', 'Namibia': 'Africa',
+    'Niger': 'Africa', 'Nigeria': 'Africa', 'Rwanda': 'Africa', 'Sao Tome and Principe': 'Africa',
+    'Senegal': 'Africa', 'Seychelles': 'Africa', 'Sierra Leone': 'Africa', 'Somalia, Fed. Rep.': 'Africa',
+    'South Africa': 'Africa', 'South Sudan': 'Africa', 'Sudan': 'Africa', 'Tanzania': 'Africa',
+    'Togo': 'Africa', 'Tunisia': 'Africa', 'Uganda': 'Africa', 'Zambia': 'Africa', 'Zimbabwe': 'Africa',
+    # Americas
+    'Antigua and Barbuda': 'Americas', 'Argentina': 'Americas', 'Bahamas, The': 'Americas',
+    'Barbados': 'Americas', 'Belize': 'Americas', 'Bolivia': 'Americas', 'Brazil': 'Americas',
+    'Canada': 'Americas', 'Chile': 'Americas', 'Colombia': 'Americas', 'Costa Rica': 'Americas',
+    'Cuba': 'Americas', 'Dominica': 'Americas', 'Dominican Republic': 'Americas',
+    'Ecuador': 'Americas', 'El Salvador': 'Americas', 'Grenada': 'Americas', 'Guatemala': 'Americas',
+    'Guyana': 'Americas', 'Haiti': 'Americas', 'Honduras': 'Americas', 'Jamaica': 'Americas',
+    'Mexico': 'Americas', 'Nicaragua': 'Americas', 'Panama': 'Americas', 'Paraguay': 'Americas',
+    'Peru': 'Americas', 'Puerto Rico (US)': 'Americas', 'St. Kitts and Nevis': 'Americas',
+    'St. Lucia': 'Americas', 'St. Vincent and the Grenadines': 'Americas', 'Suriname': 'Americas',
+    'Trinidad and Tobago': 'Americas', 'United States': 'Americas', 'Uruguay': 'Americas',
+    'Venezuela, RB': 'Americas', 'Virgin Islands (U.S.)': 'Americas',
+    'British Virgin Islands': 'Americas', 'Sint Maarten (Dutch part)': 'Americas',
+    'St. Martin (French part)': 'Americas', 'Turks and Caicos Islands': 'Americas',
+    'Bermuda': 'Americas', 'Cayman Islands': 'Americas', 'Aruba': 'Americas',
+    'Curacao': 'Americas', 'Greenland': 'Americas',
+    # Oceania
+    'Australia': 'Oceania', 'Fiji': 'Oceania', 'Kiribati': 'Oceania', 'Marshall Islands': 'Oceania',
+    'Micronesia, Fed. Sts.': 'Oceania', 'Nauru': 'Oceania', 'New Zealand': 'Oceania',
+    'Palau': 'Oceania', 'Papua New Guinea': 'Oceania', 'Samoa': 'Oceania',
+    'Solomon Islands': 'Oceania', 'Tonga': 'Oceania', 'Tuvalu': 'Oceania', 'Vanuatu': 'Oceania',
+    'New Caledonia': 'Oceania', 'Northern Mariana Islands': 'Oceania', 'French Polynesia': 'Oceania',
+    'American Samoa': 'Oceania', 'Guam': 'Oceania', 'Faroe Islands': 'Oceania',
+    'Gibraltar': 'Europe', 'Isle of Man': 'Europe', 'Channel Islands': 'Europe',
+    'West Bank and Gaza': 'Asia', 'Czechia': 'Europe'
 }
 
 # Custom predictor class that combines model with trend projection
