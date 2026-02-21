@@ -217,7 +217,8 @@ if country and st.button("🚀 Predict CO₂ Emissions", type="primary"):
         pred = model.predict(country_encoded, region_encoded, year)
         
         prediction_result = pred
-        st.success(f"**Predicted: {pred:,.0f} million tonnes of carbon‑dioxide equivalent.**")
+        #st.success(f"**Predicted: {pred:,.0f} million tonnes of carbon‑dioxide equivalent.**")
+        st.success(f"**Predicted emissions for {country}:** {pred:,.0f} million tonnes of CO₂ equivalent.")
         st.markdown("<medium>Be prudent. Act wise. Protect our resources.</medium>", unsafe_allow_html=True)  
     except Exception as e:
         st.error(f"Error: {e}")
